@@ -27,7 +27,8 @@
 #include "ReadOptions.h"
 #include "mpi.h"
 
-/*#define DEBUG_FAILED_PACKING_CANDIDATES*/
+#define DEBUG_FAILED_PACKING_CANDIDATES
+#define WITH_PARALLEL_LEGALITY_CHECKING
 
 #define AAPACK_MAX_OVERUSE_LOOKAHEAD_PINS_FAC 2 /* Maximum relative number of pins that can exceed input pins before giving up */
 #define AAPACK_MAX_OVERUSE_LOOKAHEAD_PINS_CONST 5 /* Maximum constant number of pins that can exceed input pins before giving up */
@@ -245,6 +246,16 @@ static int arr2to1(int x, int y);
 static int arr3to1(int x, int y, int z);
 
 /*****************************************/
+static boolean is_in_array(int number, int * array, int array_len) {
+    int i;
+    for (i = 0; i < array_len; ++i) {
+        if (number == array[i]) { 
+            return TRUE; 
+        } 
+    }
+    return FALSE;
+}
+
 /*globally accessable function*/
 void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
 		int num_models, boolean global_clocks, boolean *is_clock,
@@ -284,7 +295,9 @@ void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
 	t_block *clb;
 	t_slack * slacks = NULL;
 	t_pack_molecule *istart, *next_molecule, *prev_molecule, *cur_molecule;
+    double wtime_start, wtime_end;
 
+    wtime_start = MPI_Wtime();
 
     /* MPI Setup */
     MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
@@ -681,6 +694,8 @@ void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
 			}
 		}
 	}
+    wtime_end = MPI_Wtime();
+    vpr_printf(TIO_MESSAGE_INFO, "(cluster) #%d/%d << parallel constructing tooks %e seconds\n", mpiRank, mpiSize, (wtime_end - wtime_start));
 
     /*******************MPI TODO: Summary the results of clb from all processes to master process************************/
     if (mpiRank != 0) { 
@@ -890,7 +905,12 @@ void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
                     //    break; 
                     //} 
 			        vpr_printf(TIO_MESSAGE_DIRECT, "\n");
+			        //if (has_packed_m == TRUE && detailed_routing_stage == (int)E_DETAILED_ROUTE_AT_END_ONLY) {
+    #ifdef WITH_PARALLEL_LEGALITY_CHECKING
+			        if (detailed_routing_stage == (int)E_DETAILED_ROUTE_AT_END_ONLY) {
+	#else
 			        if (has_packed_m == TRUE && detailed_routing_stage == (int)E_DETAILED_ROUTE_AT_END_ONLY) {
+	#endif
 			        	is_cluster_legal = try_breadth_first_route_cluster();
 			        	if (is_cluster_legal == TRUE) {
 			        		vpr_printf(TIO_MESSAGE_INFO, "(cluster) #%d/%d << Passed route at end.\n", mpiRank, mpiSize);
@@ -900,7 +920,9 @@ void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
 			        } else {
 			        	is_cluster_legal = TRUE;
 			        }
-                    is_cluster_legal = TRUE;
+    #ifdef WITH_PARALLEL_LEGALITY_CHECKING
+                    has_packed_m = TRUE;
+    #endif
 			        if (is_cluster_legal == TRUE) {
                         if (has_packed_m == TRUE) {
 			        	    save_cluster_solution();

@@ -286,6 +286,83 @@ void do_clustering(const t_arch *arch, t_pack_molecule *molecule_head,
 	t_pack_molecule *istart, *next_molecule, *prev_molecule, *cur_molecule;
 
 
+	int input_net, output_net, ipin, opin, num_ins, num_outs, num_subset;
+	t_model_ports *in_port, *out_port;
+	/* TODO: process to get ext_inps is slow, should cache in lookup table */
+	num_subset = 0;
+    num_ins = 0;
+    num_outs = 0;
+    boolean has_connect = FALSE;
+    int * visited_in = (int *) my_calloc(num_logical_blocks*100, sizeof(int));
+    int * visited_out = (int *) my_calloc(num_logical_blocks*100, sizeof(int));
+	for (iblk = 0; iblk < num_logical_blocks; iblk++) {
+        has_connect = FALSE;
+	    in_port = logical_block[iblk].model->inputs;
+        while(in_port) {
+            if(in_port->is_clock == FALSE) {
+                for(ipin = 0; ipin < in_port->size; ipin++) {
+                    input_net = logical_block[iblk].input_nets[in_port->index][ipin];
+                    if (is_in_array(input_net, visited_out, num_outs)) { 
+                        has_connect = TRUE;
+                        break;
+                    } 
+                }
+                if (has_connect) { 
+                    break; 
+                } 
+            }
+            in_port = in_port->next;
+        }
+	    out_port = logical_block[iblk].model->outputs;
+        while(out_port) {
+            if(out_port->is_clock == FALSE) {
+                for(opin = 0; opin < out_port->size; opin++) {
+                    output_net = logical_block[iblk].output_nets[out_port->index][opin];
+                    if (is_in_array(output_net, visited_in, num_ins)) { 
+                        has_connect = TRUE;
+                        break;
+                    } 
+                }
+                if (has_connect) { 
+                    break; 
+                } 
+            }
+            out_port = out_port->next;
+        }
+        if (!has_connect) { 
+            num_subset++; 
+        } 
+	    in_port = logical_block[iblk].model->inputs;
+        while(in_port) {
+            if(in_port->is_clock == FALSE) {
+                for(ipin = 0; ipin < in_port->size; ipin++) {
+                    input_net = logical_block[iblk].input_nets[in_port->index][ipin];
+                    if (input_net != OPEN) { 
+                        visited_in[num_ins] = input_net;
+                        num_ins++;
+                    } 
+                }
+            }
+            in_port = in_port->next;
+        }
+	    out_port = logical_block[iblk].model->outputs;
+        while(out_port) {
+            if(out_port->is_clock == FALSE) {
+                for(opin = 0; opin < out_port->size; opin++) {
+                    output_net = logical_block[iblk].output_nets[out_port->index][opin];
+                    if (output_net != OPEN) { 
+                        visited_out[num_outs] = output_net; 
+                        num_outs++;
+                    } 
+                }
+            }
+            out_port = out_port->next;
+        }
+    }
+
+    vpr_printf(TIO_MESSAGE_INFO,"The number of subsets is %d \n", num_subset);
+
+
     /* MPI Setup */
     MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
